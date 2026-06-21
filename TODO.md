@@ -1,3 +1,0 @@
-- [ ] Update `src/components/kanban/column-container.tsx` to ensure column scroll region sizes correctly (add `min-h-0`, ensure flex layout).
-- [ ] Update `src/components/kanban/task-card.tsx` to prevent draggable cards from shrinking/collapsing (add `flex-shrink-0` and stable `min-h`).
-- [ ] Run a targeted UI verification: add many cards to a column, confirm no overlap, confirm vertical scrollbar appears inside the column, confirm drag/drop still works.
