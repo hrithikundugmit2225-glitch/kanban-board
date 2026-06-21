@@ -15,7 +15,6 @@ A fully responsive, real-time Trello-style Kanban Board application built as par
 - **Responsive Layout:** Fully optimized for mobile, tablet, and desktop viewports using a clean and intuitive user interface.
 
 ### Collaboration Features
-- **Member Invitations:** Invite members to collaborate on specific boards.
 - **Password Recovery:** Forgot password functionality for email-authenticated accounts.
 
 ---
