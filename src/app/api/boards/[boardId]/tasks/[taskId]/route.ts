@@ -32,11 +32,35 @@ function parseDueDate(d: unknown): string | null {
   return date.toISOString().slice(0, 10);
 }
 
+function getBearerToken(req: Request) {
+  const auth = req.headers.get('authorization') ?? '';
+  const [scheme, token] = auth.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return token;
+}
+
+async function requireUserId(req: Request) {
+  const supabase = getSupabaseServerClient();
+  const accessToken = getBearerToken(req);
+  if (!accessToken) return null;
+
+  const { data: userData, error } = await supabase.auth.getUser(accessToken);
+  if (error || !userData?.user?.id) return null;
+
+  return userData.user.id;
+}
+
 export async function PATCH(
   req: Request,
   context: { params: Promise<{ boardId: string; taskId: string }> }
 ) {
-  const { taskId } = await context.params; // boardId reserved for future auth/scoping
+  const { boardId, taskId } = await context.params;
+
+  const userId = await requireUserId(req);
+  if (!userId) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = (await req.json()) as PatchTaskPayload;
 
   const title = parseOptionalString(body.title);
@@ -55,7 +79,46 @@ export async function PATCH(
   }
 
   const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from('tasks').update(updatePayload).eq('id', taskId);
+
+  // Ensure board belongs to user
+  const { data: boardRow, error: boardErr } = await supabase
+    .from('boards')
+    .select('id')
+    .eq('id', boardId)
+    .eq('user_id', userId)
+    .single();
+
+  if (boardErr || !boardRow) {
+    return Response.json({ error: 'Board not found' }, { status: 404 });
+  }
+
+  // Fetch the task (we'll verify its column belongs to the given board)
+  const { data: verifyData, error: verifyErr } = await supabase
+    .from('tasks')
+    .select('id, column_id')
+    .eq('id', taskId)
+    .single();
+
+  if (verifyErr || !verifyData) {
+    return Response.json({ error: 'Task not found' }, { status: 404 });
+  }
+
+  // Verify the task's column belongs to the board
+  const { data: colVerify, error: colVerifyErr } = await supabase
+    .from('columns')
+    .select('id')
+    .eq('id', verifyData.column_id)
+    .eq('board_id', boardId)
+    .single();
+
+  if (colVerifyErr || !colVerify) {
+    return Response.json({ error: 'Task not found' }, { status: 404 });
+  }
+
+  const { error } = await supabase
+    .from('tasks')
+    .update(updatePayload)
+    .eq('id', taskId);
 
   if (error) {
     return Response.json({ error: 'Failed to update task', details: error.message }, { status: 500 });
@@ -65,12 +128,51 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ boardId: string; taskId: string }> }
 ) {
-  const { taskId } = await context.params; // boardId reserved for future auth/scoping
+  const { boardId, taskId } = await context.params;
+
+  const userId = await requireUserId(req);
+  if (!userId) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const supabase = getSupabaseServerClient();
+
+  const { data: boardRow, error: boardErr } = await supabase
+    .from('boards')
+    .select('id')
+    .eq('id', boardId)
+    .eq('user_id', userId)
+    .single();
+
+  if (boardErr || !boardRow) {
+    return Response.json({ error: 'Board not found' }, { status: 404 });
+  }
+
+  // Verify task belongs to a column on this board
+  const { data: verifyData, error: verifyErr } = await supabase
+    .from('tasks')
+    .select('id, column_id')
+    .eq('id', taskId)
+    .single();
+
+  if (verifyErr || !verifyData) {
+    return Response.json({ error: 'Task not found' }, { status: 404 });
+  }
+
+  const { data: colVerify, error: colVerifyErr } = await supabase
+    .from('columns')
+    .select('id')
+    .eq('id', verifyData.column_id)
+    .eq('board_id', boardId)
+    .single();
+
+  if (colVerifyErr || !colVerify) {
+    return Response.json({ error: 'Task not found' }, { status: 404 });
+  }
+
   const { error } = await supabase.from('tasks').delete().eq('id', taskId);
 
   if (error) {

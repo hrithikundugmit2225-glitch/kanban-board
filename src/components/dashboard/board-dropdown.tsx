@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 type Props = {
   selectedBoardId: string;
@@ -18,6 +19,8 @@ type BoardItem = {
 export default function BoardDropdown({ selectedBoardId }: Props) {
   const router = useRouter();
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isLoadingBoards, setIsLoadingBoards] = useState(true);
   const [boardsError, setBoardsError] = useState<string | null>(null);
@@ -31,12 +34,22 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
 
   const isLimitReached = useMemo(() => boards.length >= 10, [boards.length]);
 
+  const getAccessToken = async () => {
+    const supabase = getSupabaseClient();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  };
+
   const loadBoards = async () => {
     try {
       setIsLoadingBoards(true);
       setBoardsError(null);
 
-      const res = await fetch('/api/boards', { method: 'GET' });
+      const token = await getAccessToken();
+      const res = await fetch('/api/boards', {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
@@ -59,6 +72,22 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+
+    const onDocMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      if (rootRef.current && rootRef.current.contains(target)) return;
+
+      setIsDropdownOpen(false);
+    };
+
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [isDropdownOpen]);
+
   const startCreate = () => {
     setCreateError(null);
     setNewBoardTitle('');
@@ -70,9 +99,14 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
     setCreateError(null);
 
     try {
+      const token = await getAccessToken();
+
       const res = await fetch('/api/boards', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ title: newBoardTitle }),
       });
 
@@ -129,9 +163,11 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
     >
       <Link
         href={`/dashboard/board/${b.id}`}
-        className={[
-          'flex-1 block px-4 py-2 hover:bg-slate-50 transition-colors',
-          b.id === selectedBoardId ? 'text-indigo-600 font-semibold' : 'text-slate-700',
+      className={[
+          'flex-1 block px-4 py-2 hover:bg-slate-50 transition-colors dark:hover:bg-slate-900/60',
+          b.id === selectedBoardId
+            ? 'text-indigo-600 font-semibold dark:text-indigo-200'
+            : 'text-slate-700 dark:text-slate-200',
         ].join(' ')}
         onClick={() => setIsDropdownOpen(false)}
       >
@@ -146,9 +182,13 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
 
           const next = !b.is_starred;
           try {
+            const token = await getAccessToken();
             const res = await fetch(`/api/boards/${b.id}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
               body: JSON.stringify({ is_starred: next }),
             });
 
@@ -181,7 +221,11 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
           if (!ok) return;
 
           try {
-            const res = await fetch(`/api/boards/${b.id}`, { method: 'DELETE' });
+            const token = await getAccessToken();
+            const res = await fetch(`/api/boards/${b.id}`, {
+              method: 'DELETE',
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
             if (!res.ok) {
               const data = await res.json().catch(() => ({}));
               alert(data?.error ?? `Failed to delete board (${res.status}).`);
@@ -196,7 +240,11 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
               currentPath === `/dashboard/board/${b.id}` || currentPath.endsWith(`/dashboard/board/${b.id}`);
 
             if (isOnDeletedBoard) {
-              const res2 = await fetch('/api/boards', { method: 'GET' });
+              const token2 = await getAccessToken();
+              const res2 = await fetch('/api/boards', {
+                method: 'GET',
+                headers: token2 ? { Authorization: `Bearer ${token2}` } : undefined,
+              });
               const data2 = await res2.json().catch(() => ({}));
               const remaining: { id: string; title: string }[] = Array.isArray(data2?.boards) ? data2.boards : [];
 
@@ -236,7 +284,7 @@ export default function BoardDropdown({ selectedBoardId }: Props) {
   );
 
   return (
-    <div className="relative inline-block text-left z-[9999] overflow-visible">
+    <div ref={rootRef} className="relative inline-block text-left z-[9999] overflow-visible">
       <button
         type="button"
         onClick={() => setIsDropdownOpen((v) => !v)}

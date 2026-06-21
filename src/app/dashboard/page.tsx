@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import ThemeToggle from '@/components/theme/theme-toggle';
 import RequireAuth from '@/components/auth/RequireAuth';
 import DashboardNavbar from '@/components/dashboard/DashboardNavbar';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 type BoardItem = {
   id: string;
@@ -25,12 +26,22 @@ export default function DashboardPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState('');
 
+  const getAccessToken = async () => {
+    const supabase = getSupabaseClient();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  };
+
   const loadBoards = async () => {
     try {
       setIsLoadingBoards(true);
       setBoardsError(null);
 
-      const res = await fetch('/api/boards', { method: 'GET' });
+      const token = await getAccessToken();
+      const res = await fetch('/api/boards', {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) {
         throw new Error((data?.error as string | undefined) ?? `Failed to load boards (${res.status}).`);
@@ -61,9 +72,14 @@ export default function DashboardPage() {
     setCreateError(null);
 
     try {
+      const token = await getAccessToken();
+
       const res = await fetch('/api/boards', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ title: trimmed }),
       });
 

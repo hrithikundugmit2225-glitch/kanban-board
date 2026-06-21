@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Column, Task } from '@/types';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 type CreateTaskInput = {
   title: string;
@@ -60,7 +61,15 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setColumns: (payload) => set({ columns: payload.columns, boardTitle: payload.boardTitle }),
 
   loadBoard: async (boardId) => {
-    const res = await fetch(`/api/boards/${boardId}`, { method: 'GET' });
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? null;
+
+    const res = await fetch(`/api/boards/${boardId}`, {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+
     if (!res.ok) {
       throw new Error(`Failed to load board (${res.status})`);
     }
@@ -116,9 +125,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     }),
 
   createTask: async (boardId, input) => {
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? null;
+
     const res = await fetch(`/api/boards/${boardId}/tasks`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(input),
     });
 
@@ -132,9 +148,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   },
 
   updateTask: async (boardId, taskId, input) => {
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? null;
+
     const res = await fetch(`/api/boards/${boardId}/tasks/${taskId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(input),
     });
 
@@ -148,8 +171,13 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   },
 
   deleteTask: async (boardId, taskId) => {
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? null;
+
     const res = await fetch(`/api/boards/${boardId}/tasks/${taskId}`, {
       method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
 
     if (!res.ok) {
@@ -162,9 +190,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   },
 
   createColumn: async (boardId, input) => {
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? null;
+
     const res = await fetch(`/api/boards/${boardId}/columns`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(input),
     });
 
@@ -178,9 +213,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   },
 
   reorderColumns: async (boardId, orderedColumnIds) => {
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? null;
+
     const res = await fetch(`/api/boards/${boardId}/columns/reorder`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ orderedColumnIds }),
     });
 

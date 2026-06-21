@@ -1,3 +1,6 @@
+'use client';
+
+import { use, useState } from 'react';
 import KanbanBoard from '@/components/kanban/kanban-board';
 import BoardDropdown from '@/components/dashboard/board-dropdown';
 import ThemeToggle from '@/components/theme/theme-toggle';
@@ -7,11 +10,12 @@ import RequireAuth from '@/components/auth/RequireAuth';
 import Image from 'next/image';
 
 interface BoardPageProps {
-  params: { boardId: string } | Promise<{ boardId: string }>;
+  params: Promise<{ boardId: string }>;
 }
 
-export default async function BoardPage({ params }: BoardPageProps) {
-  const { boardId } = await params;
+export default function BoardPage({ params }: BoardPageProps) {
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const { boardId } = use(params);
 
   return (
     <RequireAuth>
@@ -59,7 +63,31 @@ export default async function BoardPage({ params }: BoardPageProps) {
                 <BoardSearchBar />
               </div>
 
-              <BoardDropdown selectedBoardId={boardId} boards={[1, 2, 3, 4, 5]} />
+              <div className="flex items-center gap-3">
+                <BoardDropdown selectedBoardId={boardId} boards={[1, 2, 3, 4, 5]} />
+                <button
+                  type="button"
+                  onClick={() => setCalendarOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 text-xs font-semibold rounded border border-indigo-200 shadow-sm transition-all relative z-[100000] dark:bg-slate-950/60 dark:hover:bg-slate-900 dark:text-indigo-200 dark:border-slate-800/80"
+                  aria-label="Open calendar"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-slate-600 dark:text-slate-200/80"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2.5"
+                      d="M8 2v4m8-4v4M3 10h18M5 6h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+                    />
+                  </svg>
+                  <span>Calendar</span>
+                </button>
+              </div>
             </div>
 
             {/* Right: theme toggle + profile dropdown (same bar, far-right) */}
@@ -71,7 +99,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
         </header>
 
         <main className="flex flex-col flex-1 overflow-hidden">
-          <KanbanBoard boardId={boardId} />
+          <KanbanBoard boardId={boardId} calendarOpen={calendarOpen} onCloseCalendar={() => setCalendarOpen(false)} />
         </main>
       </div>
     </RequireAuth>

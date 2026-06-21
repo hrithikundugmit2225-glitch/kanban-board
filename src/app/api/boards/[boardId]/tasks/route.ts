@@ -37,11 +37,34 @@ function safeIdString(maybeId: unknown): string {
   return typeof maybeId === 'string' && maybeId.length > 0 ? maybeId : '';
 }
 
+function getBearerToken(req: Request) {
+  const auth = req.headers.get('authorization') ?? '';
+  const [scheme, token] = auth.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return token;
+}
+
+async function requireUserId(req: Request) {
+  const supabase = getSupabaseServerClient();
+  const accessToken = getBearerToken(req);
+  if (!accessToken) return null;
+
+  const { data: userData, error } = await supabase.auth.getUser(accessToken);
+  if (error || !userData?.user?.id) return null;
+
+  return userData.user.id;
+}
+
 export async function POST(
   req: Request,
   context: { params: Promise<{ boardId: string }> }
 ) {
-  const { boardId } = await context.params; // reserved for future auth/scoping
+  const { boardId } = await context.params;
+
+  const userId = await requireUserId(req);
+  if (!userId) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const supabase = getSupabaseServerClient();
   const body = (await req.json()) as CreateTaskPayload;
@@ -57,6 +80,29 @@ export async function POST(
   }
   if (!column_id) {
     return Response.json({ error: 'Missing required field: column_id' }, { status: 400 });
+  }
+
+  // Ensure board belongs to user and column belongs to that board.
+  const { data: boardRow, error: boardErr } = await supabase
+    .from('boards')
+    .select('id')
+    .eq('id', boardId)
+    .eq('user_id', userId)
+    .single();
+
+  if (boardErr || !boardRow) {
+    return Response.json({ error: 'Board not found' }, { status: 404 });
+  }
+
+  const { data: columnRow, error: colErr } = await supabase
+    .from('columns')
+    .select('id')
+    .eq('id', column_id)
+    .eq('board_id', boardId)
+    .maybeSingle();
+
+  if (colErr || !columnRow) {
+    return Response.json({ error: 'Column not found' }, { status: 404 });
   }
 
   // Compute next position within the column.

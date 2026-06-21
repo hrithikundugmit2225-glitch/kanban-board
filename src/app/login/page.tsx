@@ -42,10 +42,26 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-[#f6f7fb] dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/70 shadow-sm p-6 dark:border-slate-800 dark:bg-slate-950/40">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Login</h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Access your boards</p>
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background image for entire page */}
+      <div
+        className="absolute inset-0 -z-10"
+        style={{
+          backgroundImage: "url('/login bg.jpg')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+      {/* Subtle, light overlay so the card content stays soft + readable */}
+      <div className="absolute inset-0 -z-10 bg-white/65 dark:bg-slate-950/65" />
+
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/70 shadow-sm p-6 dark:border-slate-800 dark:bg-slate-950/40 backdrop-blur-sm">
+        {/* Header inside card */}
+        <div className="mb-1 text-center">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Kanban Board</h1>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Trello</p>
+        </div>
 
         {error ? (
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-200">
@@ -57,7 +73,7 @@ export default function LoginPage() {
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Email</label>
             <input
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:focus:border-indigo-300"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:focus:border-indigo-300 dark:focus:ring-indigo-900/30"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
@@ -68,7 +84,7 @@ export default function LoginPage() {
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Password</label>
             <input
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:focus:border-indigo-300"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:focus:border-indigo-300 dark:focus:ring-indigo-900/30"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
@@ -79,7 +95,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-900/30"
           >
             {isSubmitting ? 'Signing in…' : 'Login'}
           </button>

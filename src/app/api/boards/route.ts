@@ -4,17 +4,44 @@ type CreateBoardPayload = {
   title?: unknown;
 };
 
-export async function GET() {
+function getBearerToken(req: Request) {
+  const auth = req.headers.get('authorization') ?? '';
+  const [scheme, token] = auth.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return token;
+}
+
+async function requireUserId(req: Request) {
+  const supabase = getSupabaseServerClient();
+  const accessToken = getBearerToken(req);
+  if (!accessToken) return null;
+
+  const { data: userData, error } = await supabase.auth.getUser(accessToken);
+  if (error || !userData?.user?.id) return null;
+
+  return userData.user.id;
+}
+
+export async function GET(req: Request) {
+  const userId = await requireUserId(req);
+  if (!userId) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabase = getSupabaseServerClient();
 
   const { data, error } = await supabase
     .from('boards')
     .select('id,title,is_starred')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(10);
 
   if (error) {
-    return Response.json({ error: 'Failed to load boards', details: error.message }, { status: 500 });
+    return Response.json(
+      { error: 'Failed to load boards', details: error.message },
+      { status: 500 },
+    );
   }
 
   return Response.json({
@@ -27,47 +54,81 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const userId = await requireUserId(req);
+  if (!userId) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabase = getSupabaseServerClient();
-
   const body = (await req.json()) as CreateBoardPayload;
-  const title = typeof body?.title === 'string' ? body.title.trim() : '';
 
-  if (!title) return Response.json({ error: 'Board title is required' }, { status: 400 });
+  const titleRaw = typeof body?.title === 'string' ? body.title : '';
+  const title = titleRaw.trim();
 
-  // Create board (allow user_id to be null; RLS/policies must allow anon insert).
-  const { data: boardData, error: boardErr } = await supabase
+  if (!title) {
+    return Response.json(
+      { error: 'Missing required field: title' },
+      { status: 400 },
+    );
+  }
+
+  const { data, error } = await supabase
     .from('boards')
-    .insert({ title, user_id: null })
+    .insert({
+      title,
+      user_id: userId,
+      is_starred: false,
+    })
     .select('id,title,is_starred')
     .single();
 
-  if (boardErr) {
-    return Response.json({ error: 'Failed to create board', details: boardErr.message }, { status: 500 });
+  if (error) {
+    return Response.json(
+      { error: 'Failed to create board', details: error.message },
+      { status: 500 },
+    );
   }
 
-  const boardId = (boardData as any).id as string;
+  const boardId = data.id as string;
 
-  // Create default columns.
-  const columnsToInsert = [
-    { board_id: boardId, title: 'TO DO', position: 0 },
-    { board_id: boardId, title: 'IN PROGRESS', position: 1 },
-    { board_id: boardId, title: 'REVIEW', position: 2 },
-    { board_id: boardId, title: 'DONE', position: 3 },
+  // Seed default columns for the new board
+  const defaultColumns = [
+    { title: 'To Do', position: 1 },
+    { title: 'In Progress', position: 2 },
+    { title: 'Review', position: 3 },
+    { title: 'Done', position: 4 },
   ];
 
-  const { error: colsErr } = await supabase.from('columns').insert(columnsToInsert);
+  const { data: columnsData, error: colsErr } = await supabase
+    .from('columns')
+    .insert(
+      defaultColumns.map((c) => ({
+        board_id: boardId,
+        title: c.title,
+        position: c.position,
+      })),
+    )
+    .select('id,board_id,title,position')
+    .order('position', { ascending: true });
+
   if (colsErr) {
     return Response.json(
-      { error: 'Failed to create default columns', details: colsErr.message },
-      { status: 500 }
+      { error: 'Failed to seed default columns', details: colsErr.message },
+      { status: 500 },
     );
   }
 
   return Response.json({
     board: {
-      id: boardId,
-      title: (boardData as any).title as string,
-      is_starred: Boolean((boardData as any).is_starred),
+      id: data.id as string,
+      title: data.title as string,
+      is_starred: Boolean(data.is_starred),
     },
+    columns: (columnsData ?? []).map((r: any) => ({
+      id: r.id as string,
+      board_id: r.board_id as string,
+      title: r.title as string,
+      position: Number(r.position),
+    })),
   });
 }

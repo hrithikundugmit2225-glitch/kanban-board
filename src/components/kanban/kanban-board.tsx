@@ -1,15 +1,18 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DragDropContext, DropResult, Draggable, Droppable } from '@hello-pangea/dnd';
 import { useBoardStore } from '@/store/use-board-store';
 import ColumnContainer from './column-container';
 import TaskEditor from './task-editor';
 import { Column, Task } from '@/types';
 import { useSearchParams } from 'next/navigation';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 type Props = {
   boardId: string;
+  calendarOpen: boolean;
+  onCloseCalendar: () => void;
 };
 
 type EditorState =
@@ -17,7 +20,7 @@ type EditorState =
   | { open: true; mode: 'create'; column: Column }
   | { open: true; mode: 'edit'; task: Task };
 
-export default function KanbanBoard({ boardId }: Props) {
+export default function KanbanBoard({ boardId, calendarOpen, onCloseCalendar }: Props) {
   const {
     columns,
     moveTask,
@@ -29,6 +32,8 @@ export default function KanbanBoard({ boardId }: Props) {
     reorderColumns,
   } = useBoardStore();
 
+  const allTasks = columns.flatMap((c) => c.tasks ?? []);
+
   const searchParams = useSearchParams();
   const searchQuery = searchParams.get('q') ?? '';
  
@@ -39,12 +44,24 @@ export default function KanbanBoard({ boardId }: Props) {
   useEffect(() => {
     let cancelled = false;
 
+    async function getAccessToken() {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    }
+
     async function load() {
       try {
         setIsLoading(true);
         setError(null);
 
-        const res = await fetch(`/api/boards/${boardId}`, { method: 'GET' });
+        const token = await getAccessToken();
+
+        const res = await fetch(`/api/boards/${boardId}`, {
+          method: 'GET',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
         if (!res.ok) {
           throw new Error(`Failed to load board (${res.status})`);
         }
@@ -157,6 +174,192 @@ export default function KanbanBoard({ boardId }: Props) {
     );
   }
 
+  const parseDueDateToYMD = (d?: string | null): string | null => {
+    if (!d) return null;
+    if (typeof d !== 'string') return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    const date = new Date(d);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+  };
+
+  const tasksByDueDate = allTasks.reduce<Record<string, Task[]>>((acc, task) => {
+    const ymd = parseDueDateToYMD(task.due_date ?? null);
+    if (!ymd) return acc;
+    acc[ymd] = acc[ymd] ? [...acc[ymd], task] : [task];
+    return acc;
+  }, {});
+
+  const CalendarOverlay = () => {
+    const [activeDate, setActiveDate] = useState(() => new Date());
+    const [mode, setMode] = useState<'month' | 'week'>('month');
+
+    useEffect(() => {
+      if (calendarOpen) return;
+    }, [calendarOpen]);
+
+    const year = activeDate.getFullYear();
+    const month = activeDate.getMonth();
+
+    const monthFirst = new Date(year, month, 1);
+    const monthLast = new Date(year, month + 1, 0);
+
+    const monthStartDow = monthFirst.getDay(); // 0=Sun
+    const daysInMonth = monthLast.getDate();
+
+    const weekStart = new Date(activeDate);
+    weekStart.setDate(activeDate.getDate() - weekStart.getDay());
+
+    const weekDays = Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      return d;
+    });
+
+    const monthCells: Date[] = [];
+    // leading blanks
+    for (let i = 0; i < monthStartDow; i++) monthCells.push(new Date(year, month, 1 - monthStartDow + i));
+    // actual month days
+    for (let day = 1; day <= daysInMonth; day++) monthCells.push(new Date(year, month, day));
+    // trailing to complete 6 rows (42 cells) like common Trello-ish calendars
+    while (monthCells.length < 42) {
+      const last = monthCells[monthCells.length - 1];
+      monthCells.push(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1));
+    }
+
+    const headerLabel = mode === 'month'
+      ? activeDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+      : `Week of ${weekStart.toLocaleDateString()}`;
+
+    const renderCell = (d: Date) => {
+      const ymd = d.toISOString().slice(0, 10);
+      const tasks = tasksByDueDate[ymd] ?? [];
+      const isInMonth = d.getMonth() === month;
+
+      return (
+        <button
+          type="button"
+          key={ymd}
+          onClick={() => setActiveDate(d)}
+          className={[
+            'group flex min-h-[92px] w-full flex-col rounded-md border border-slate-200/70 bg-white/70 p-2 text-left',
+            'hover:bg-white dark:border-slate-800/70 dark:bg-slate-950/40',
+            !isInMonth && mode === 'month' ? 'opacity-45' : '',
+          ].join(' ')}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+              {d.getDate()}
+            </div>
+            {tasks.length > 0 ? (
+              <div className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full dark:bg-indigo-900/30 dark:text-indigo-200">
+                {tasks.length}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-2 space-y-1 overflow-hidden">
+            {tasks.slice(0, 3).map((t) => (
+              <div
+                key={t.id}
+                className="truncate text-[12px] leading-4 font-medium text-slate-700 dark:text-slate-200 group-hover:text-indigo-700 dark:group-hover:text-indigo-200"
+                title={t.title}
+              >
+                {t.title}
+              </div>
+            ))}
+            {tasks.length > 3 ? (
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                +{tasks.length - 3} more
+              </div>
+            ) : null}
+          </div>
+        </button>
+      );
+    };
+
+    return (
+      <div className="fixed inset-0 z-[100000] bg-slate-900/40 backdrop-blur-sm">
+        <div className="absolute inset-0 p-4 md:p-8 overflow-auto">
+          <div className="mx-auto max-w-5xl rounded-2xl bg-white/90 dark:bg-slate-950/90 border border-slate-200/70 dark:border-slate-800/70 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800/70 px-4 py-3">
+              <div>
+                <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{headerLabel}</div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">
+                  {tasksByDueDate ? 'Tasks mapped by due date' : ''}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMode('month')}
+                  className={[
+                    'flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold rounded border shadow-sm transition-all relative z-[100000]',
+                    'bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200',
+                    'dark:bg-slate-950/60 dark:hover:bg-slate-900/90 dark:text-indigo-200 dark:border-indigo-800/80',
+                    mode === 'month' ? 'bg-indigo-50 dark:bg-indigo-900/30' : '',
+                  ].join(' ')}
+                >
+                  Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('week')}
+                  className={[
+                    'flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold rounded border shadow-sm transition-all relative z-[100000]',
+                    'bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200',
+                    'dark:bg-slate-950/60 dark:hover:bg-slate-900/90 dark:text-indigo-200 dark:border-indigo-800/80',
+                    mode === 'week' ? 'bg-indigo-50 dark:bg-indigo-900/30' : '',
+                  ].join(' ')}
+                >
+                  Week
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onCloseCalendar()}
+                  className="rounded-md border border-slate-200 bg-white/70 hover:bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-100"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 py-3">
+              {mode === 'month' ? (
+                <div className="grid grid-cols-7 gap-2">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((w) => (
+                    <div key={w} className="text-xs font-bold text-slate-600 dark:text-slate-300 px-1">
+                      {w}
+                    </div>
+                  ))}
+                  {monthCells.map((d) => renderCell(d))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-7 gap-2">
+                  {weekDays.map((d) => (
+                    <div key={d.toISOString()} className="grid gap-2">
+                      <div className="text-xs font-bold text-slate-600 dark:text-slate-300 px-1">
+                        {d.toLocaleDateString(undefined, { weekday: 'short' })}{' '}
+                        <span className="font-semibold">{d.getDate()}</span>
+                      </div>
+                      {renderCell(d)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-slate-200/70 dark:border-slate-800/70 text-xs text-slate-600 dark:text-slate-300">
+              Tip: Click a date to focus it. Only task titles with a valid <span className="font-semibold">due_date</span> are shown.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       {editor.open ? (
@@ -179,6 +382,8 @@ export default function KanbanBoard({ boardId }: Props) {
           }}
         />
       ) : null}
+
+      {calendarOpen ? <CalendarOverlay /> : null}
 
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex h-full w-full flex-col bg-transparent">
